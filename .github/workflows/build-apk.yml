@@ -1,19 +1,21 @@
-name: Build PES 2013 IMG Explorer
+name: Build PES 2013 IMG Explorer APK
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Java 17
@@ -22,37 +24,40 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      - name: Install SDK
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install Android Platform
         run: |
-          sdkmanager --install "platforms;android-35" "build-tools;35.0.0"
-          yes | sdkmanager --licenses
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
       - name: Extract project ZIP
         run: |
-          mkdir extracted
-          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" | head -n 1)
+          mkdir -p extracted
+          ZIP_FILE=$(find . -maxdepth 1 -iname "*.zip" -print -quit)
           test -n "$ZIP_FILE"
           unzip -q "$ZIP_FILE" -d extracted
-          PROJECT_DIR=$(dirname "$(find extracted -name gradlew -print -quit)")
-          test -n "$PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+          SETTINGS_FILE=$(find extracted -name "settings.gradle.kts" -print -quit)
+          test -n "$SETTINGS_FILE"
+          PROJECT_DIR=$(dirname "$SETTINGS_FILE")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build APK
-        id: build
         run: |
           cd "$PROJECT_DIR"
-          chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
-          APK=$(find app/build/outputs/apk/debug -name "*.apk" -print -quit)
-          test -n "$APK"
-          echo "apk_path=$PROJECT_DIR/$APK" >> $GITHUB_OUTPUT
+          gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: PES2013-IMG-Explorer-APK
-          path: ${{ steps.build.outputs.apk_path }}
-          
+          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
